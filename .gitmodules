@@ -1,0 +1,3 @@
+[submodule "submodules/verilog-library-barawn"]
+	path = submodules/verilog-library-barawn
+	url = https://github.com/barawn/verilog-library-barawn
