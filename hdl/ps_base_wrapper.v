@@ -81,6 +81,10 @@ module ps_base_wrapper
     mh_axis_tdata,
     mh_axis_tready,
     mh_axis_tvalid,
+    
+    reset_0,
+    locked,
+    
     sync_clk,
     sysref_in_diff_n,
     sysref_in_diff_p);
@@ -158,6 +162,9 @@ module ps_base_wrapper
   output sync_clk;
   input sysref_in_diff_n;
   input sysref_in_diff_p;
+
+  input reset_0;
+  output locked;
 
   wire adc0_clk_clk_n;
   wire adc0_clk_clk_p;
@@ -307,6 +314,8 @@ module ps_base_wrapper
         .mh_axis_tready(mh_axis_tready),
         .mh_axis_tvalid(mh_axis_tvalid),
         .sync_clk(sync_clk),
+        .reset_0(reset_0),
+        .locked(locked),
         .sysref_in_diff_n(sysref_in_diff_n),
         .sysref_in_diff_p(sysref_in_diff_p));
 endmodule
