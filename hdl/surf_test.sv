@@ -27,8 +27,57 @@ module surf_test(input adc0_clk_p,
                 input adcH_n,
 
                 input sysref_p,
-                input sysref_n
+                input sysref_n,
+                
+                input PL_SYSREF_P,
+                input PL_SYSREF_N,
+                
+                input RXCLK_P,
+                input RXCLK_N,
+                input CIN_P,
+                input CIN_N
     );
+    
+    wire plclk;
+    IBUFDS u_plclk(.I(PL_SYSREF_P),.IB(PL_SYSREF_N),.O(plclk));
+    reg tog = 0;
+    always @(posedge plclk) tog <= ~tog;
+    single_debug u_sd(.clk(plclk),.probe0(tog));    
+    
+    wire rxclk;
+    wire parclk;
+    wire smpclk;
+    wire rxsyncclk;
+    
+    wire rxclk_reset;
+    wire rxclk_locked;
+    rxclock_gen u_rxclk(.clk_in1_p(RXCLK_P),.clk_in1_n(RXCLK_N),
+                        .reset(rxclk_reset),
+                        .rxclk(rxclk),
+                        .parclk(parclk),
+                        .smpclk(smpclk),
+                        .syncclk(rxsyncclk),
+                        .locked(rxclk_locked));
+    wire rxclk_sync;
+    wire parclk_sync;
+    rackbus_clk_sync u_sync(.rxclk(rxclk),
+                            .parclk(parclk),
+                            .syncclk(rxsyncclk),
+                            .rxclk_sync_o(rxclk_sync),
+                            .parclk_sync_o(parclk_sync));
+
+    wire [5:0] input_data;
+    rackbus_in u_rackbus( .smpclk(smpclk),
+                          .parclk(parclk),
+                          .parclk_sync_i(parclk_sync),
+                          .rxclk(rxclk),
+                          .rxclk_sync_i(rxclk_sync),
+                          .cin_p(CIN_P),
+                          .cin_n(CIN_N),
+                          .dat_o(input_data));
+                            
+    sync_debug u_rxsync(.clk(rxclk),.probe0(rxclk_sync),.probe1(input_data));
+                        
     
     wire [127:0] ma_axis_tdata;
     wire         ma_axis_tvalid;
@@ -57,7 +106,35 @@ module surf_test(input adc0_clk_p,
     assign adc_tdata[6] = mg_axis_tdata;
     assign adc_tdata[7] = mh_axis_tdata;
 
+
     `DEFINE_AXI4L_IF( pueo_ , 40, 32 );
+
+    wire aclk;
+    wire m_axi_aclk;
+    wire m_axi_aresetn;
+    wire memclk;
+    wire syncclk;
+
+    wire [15:0] smp[7:0];
+    generate
+        genvar s;
+        for (s=0;s<8;s=s+1) begin : DV
+            assign smp[s] = adc_tdata[0][16*s +: 16];
+        end
+    endgenerate    
+
+    ila_0 u_ila(.clk(aclk),
+                .probe0(smp[0]),
+                .probe1(smp[1]),
+                .probe2(smp[2]),
+                .probe3(smp[3]),
+                .probe4(smp[4]),
+                .probe5(smp[5]),
+                .probe6(smp[6]),
+                .probe7(smp[7]));
+
+    wire clk_reset;
+    wire clk_locked;
 
     ps_base_wrapper u_ps( .adc0_clk_clk_p(adc0_clk_p),
                           .adc0_clk_clk_n(adc0_clk_n),
@@ -102,11 +179,16 @@ module surf_test(input adc0_clk_p,
                           .m_axi_aresetn(m_axi_aresetn),
                           `CONNECT_AXI4L_IF( m_axi_ , pueo_ ),                  
 
+                          .reset_0(clk_reset),
+                          .locked(clk_locked),
+
                           .mem_clk(memclk),
                           .sync_clk(syncclk),
 
                           .sysref_in_diff_p(sysref_p),
                           .sysref_in_diff_n(sysref_n));
+
+    clk_reset_vio u_clkvio(.clk(m_axi_aclk),.probe_in0(clk_locked),.probe_out0(clk_reset));
 
     (* KEEP = "TRUE" *)
     wire [17:0] coeff_data;
@@ -124,6 +206,20 @@ module surf_test(input adc0_clk_p,
                      .coeff_wr_o(coeff_wr),
                      .coeff_update_o(coeff_update));
     
+    // 100 MHz = 100,000 to get to millis
+    wire millice;
+    dsp_counter_terminal_count #(.FIXED_TCOUNT("TRUE"),.FIXED_TCOUNT_VALUE(100000))
+                u_millice(.clk_i(m_axi_aclk),
+                          .rst_i(1'b0),
+                          .count_i(1'b1),
+                          .tcount_reached_o(millice));
+    board_clock_checkout u_checkout(.sysclk(m_axi_aclk),
+                                    .sysclk_millice(millice),
+                                    .testclk(plclk));
+
+    board_clock_checkout u_checkout_rxclk(.sysclk(m_axi_aclk),
+                                          .sysclk_millice(millice),
+                                          .testclk(rxclk));
     
     
     
